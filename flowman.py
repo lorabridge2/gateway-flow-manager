@@ -259,7 +259,7 @@ def parse_new_flow(flow: any, r_client: redis.Redis):
     print(flow)
     commands = []
     # add flow
-    commands.append([9, 0])
+    commands.append([9, flow_id_lb])
     for node in flow["nodes"]:
         node_id_lb = get_node_key(flow["id"], node["id"], r_client)
         node_type_lb = NODE_TYPES[node["type"]]
