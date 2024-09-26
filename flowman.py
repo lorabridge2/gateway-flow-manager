@@ -41,12 +41,12 @@ MQTT_HOST = os.environ.get("DEV_MQTT_HOST", "127.0.0.1")
 MQTT_PORT = int(os.environ.get("DEV_MQTT_PORT", 1883))
 MQTT_USERNAME = get_fileenv("DEV_MQTT_USERNAME") or "lorabridge"
 MQTT_PASSWORD = get_fileenv("DEV_MQTT_PASSWORD") or "lorabridge"
-DEV_MAN_TOPIC = os.environ.get("DEV_DEV_MAN_TOPIC", "devicemanager")
+# DEV_MAN_TOPIC = os.environ.get("DEV_DEV_MAN_TOPIC", "devicemanager")
 REDIS_HOST = os.environ.get("DEV_REDIS_HOST", "localhost")
 REDIS_PORT = int(os.environ.get("DEV_REDIS_PORT", 6379))
 REDIS_DB = int(os.environ.get("DEV_REDIS_DB", 0))
-DISCOVERY_TOPIC = os.environ.get("DEV_DISCOVERY_TOPIC", "lorabridge/discovery")
-STATE_TOPIC = os.environ.get("DEV_STATE_TOPIC", "lorabridge/state")
+# DISCOVERY_TOPIC = os.environ.get("DEV_DISCOVERY_TOPIC", "lorabridge/discovery")
+# STATE_TOPIC = os.environ.get("DEV_STATE_TOPIC", "lorabridge/state")
 
 REDIS_SEPARATOR = ":"
 REDIS_PREFIX = "lorabridge:flowman"
@@ -156,13 +156,14 @@ def main():
                 flow["nodes"] = json.loads(flow["nodes"])
                 flow["edges"] = json.loads(flow["edges"])
                 print("b")
-                commands = None
-                if not flow_exists(flow["id"], r_client):
-                    print("c")
-                    commands = parse_new_flow(flow, r_client)
-                else:
-                    print("d")
-                    commands = diff_flow(flow)
+                commands = parse_new_flow(flow, r_client)
+
+                # if not flow_exists(flow["id"], r_client):
+                #     print("c")
+                #     commands = parse_new_flow(flow, r_client)
+                # else:
+                #     print("d")
+                #     commands = diff_flow(flow)
 
                 if commands:
                     msgs = [
@@ -172,12 +173,15 @@ def main():
                         }
                         for x in commands
                     ]
-                    publish.multiple(
-                        msgs,
-                        hostname=MQTT_HOST,
-                        port=MQTT_PORT,
-                        auth={"username": MQTT_USERNAME, "password": MQTT_PASSWORD},
-                    )
+                    for cmd in commands:
+                        temp_hex_string = "".join("{:02x}".format(x) for x in cmd)
+                        r_client.lpush("lbcommands", temp_hex_string)
+                    # publish.multiple(
+                    #     msgs,
+                    #     hostname=MQTT_HOST,
+                    #     port=MQTT_PORT,
+                    #     auth={"username": MQTT_USERNAME, "password": MQTT_PASSWORD},
+                    # )
     # client.user_data_set({"r_client": r_client, "topic": DEV_MAN_TOPIC})
 
     # Blocking call that processes network traffic, dispatches callbacks and
@@ -190,11 +194,11 @@ def main():
 def get_node_key(flow_id: str, node_id: str, r_client: redis.Redis) -> int:
     lb_node_dict = REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", flow_id, "lb-nodes"])
     ui_node_dict = REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", flow_id, "ui-nodes"])
-    return _get_key(node_id, r_client, lb_node_dict, ui_node_dict)
+    return int(_get_key(node_id, r_client, lb_node_dict, ui_node_dict))
 
 
 def get_flow_key(id: str, r_client: redis.Redis) -> int:
-    return _get_key(id, r_client, flow_lb_key, flow_ui_key)
+    return int(_get_key(id, r_client, flow_lb_key, flow_ui_key))
 
 
 def _get_key(id: str, r_client: redis.Redis, lb_dict: str, ui_dict: str):
@@ -254,10 +258,13 @@ def del_node_id(id: str, r_client: redis.Redis):
 def parse_new_flow(flow: any, r_client: redis.Redis):
     # - save flow for diff
     #
+    commands = []
+    # TODO autoremove flow ONLY for now
+    if flow_exists(flow["id"], r_client):
+        commands.append([11, get_flow_key(flow["id"], r_client)])
     print("hy")
     flow_id_lb = get_flow_key(flow["id"], r_client)
     print(flow)
-    commands = []
     # add flow
     commands.append([9, flow_id_lb])
     for node in flow["nodes"]:
