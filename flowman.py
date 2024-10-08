@@ -172,6 +172,14 @@ def main():
                 #     commands = diff_flow(flow)
 
                 if commands:
+                    for cmd in commands:
+                        print("".join("{:02x}".format(x) for x in cmd))
+                        print(
+                            base64.b64encode(
+                                "".join("{:02x}".format(x) for x in cmd).encode(),
+                            ).decode()
+                        )
+
                     msgs = [
                         {
                             "topic": "application/c42cfa44-9586-4266-834b-bd412c33c488/device/2000000000000001/command/down",
