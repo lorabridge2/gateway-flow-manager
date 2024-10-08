@@ -169,9 +169,9 @@ def main():
                     msgs = [
                         {
                             "topic": "application/LoRaBridge2_Datapipe/device/2000000000000001/command/down",
-                            "payload": x,
+                            "payload": "".join("{:02x}".format(x) for x in cmd),
                         }
-                        for x in commands
+                        for cmd in commands
                     ]
                     # for cmd in commands:
                     #     temp_hex_string = "".join("{:02x}".format(x) for x in cmd)
