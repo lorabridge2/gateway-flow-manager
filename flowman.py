@@ -178,7 +178,7 @@ def main():
                             # "topic": "eu868/gateway/aa555a0000000101/command/down",
                             "payload": json.dumps(
                                 {
-                                    "confirmed": False,
+                                    "confirmed": True,
                                     "fPort": 10,
                                     "devEui": "2000000000000001",
                                     "data": base64.b64encode(
