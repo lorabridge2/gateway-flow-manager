@@ -14,4 +14,4 @@ WORKDIR /home/devman
 COPY . .
 
 USER 1337:1337
-ENTRYPOINT [ "python3", "devman.py"]
+ENTRYPOINT [ "python3", "flowman.py"]
