@@ -174,13 +174,16 @@ def main():
                 if commands:
                     msgs = [
                         {
-                            "topic": "application/c42cfa44-9586-4266-834b-bd412c33c488/device/2000000000000001/command/down",
+                            # "topic": "application/c42cfa44-9586-4266-834b-bd412c33c488/device/2000000000000001/command/down",
+                            "topic": "eu868/gateway/aa555a0000000101/command/down",
                             "payload": json.dumps(
                                 {
                                     "confirmed": False,
                                     "fPort": 10,
                                     "data": base64.b64encode(
-                                        "".join("{:02x}".format(x) for x in cmd).encode(),
+                                        "".join(
+                                            "{:02x}".format(x) for x in cmd
+                                        ).encode(),
                                     ).decode(),
                                 }
                             ),
