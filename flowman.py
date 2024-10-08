@@ -168,7 +168,7 @@ def main():
                 if commands:
                     msgs = [
                         {
-                            "topic": "application/42cfa44-9586-4266-834b-bd412c33c488/device/2000000000000001/command/down",
+                            "topic": "application/c42cfa44-9586-4266-834b-bd412c33c488/device/2000000000000001/command/down",
                             "payload": "".join("{:02x}".format(x) for x in cmd),
                         }
                         for cmd in commands
