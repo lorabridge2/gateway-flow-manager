@@ -9,6 +9,7 @@ import sys
 import redis
 import logging
 import device_classes
+import base64
 import paho.mqtt.publish as publish
 
 
@@ -141,6 +142,11 @@ def main():
     pubsub.subscribe(
         "__keyspace@0__:" + REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-queue"])
     )
+    # payload = {
+    #     "confirmed": False,  # whether the payload must be sent as confirmed data down or not
+    #     "fPort": 10,  # FPort to use (must be > 0)
+    #     "data": None,  # base64 encoded data (plaintext, will be encrypted by ChirpStack Network Server)
+    # }
 
     # res = r_client.llen(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-queue"]))
     # print(res)
@@ -169,7 +175,15 @@ def main():
                     msgs = [
                         {
                             "topic": "application/c42cfa44-9586-4266-834b-bd412c33c488/device/2000000000000001/command/down",
-                            "payload": "".join("{:02x}".format(x) for x in cmd),
+                            "payload": json.dumps(
+                                {
+                                    "confirmed": False,
+                                    "fPort": 10,
+                                    "data": base64.b64encode(
+                                        "".join("{:02x}".format(x) for x in cmd),
+                                    ),
+                                }
+                            ),
                         }
                         for cmd in commands
                     ]
@@ -182,6 +196,7 @@ def main():
                         port=MQTT_PORT,
                         auth={"username": MQTT_USERNAME, "password": MQTT_PASSWORD},
                     )
+
     # client.user_data_set({"r_client": r_client, "topic": DEV_MAN_TOPIC})
 
     # Blocking call that processes network traffic, dispatches callbacks and
