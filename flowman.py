@@ -173,15 +173,15 @@ def main():
                         }
                         for x in commands
                     ]
-                    for cmd in commands:
-                        temp_hex_string = "".join("{:02x}".format(x) for x in cmd)
-                        r_client.lpush("lbcommands", temp_hex_string)
-                    # publish.multiple(
-                    #     msgs,
-                    #     hostname=MQTT_HOST,
-                    #     port=MQTT_PORT,
-                    #     auth={"username": MQTT_USERNAME, "password": MQTT_PASSWORD},
-                    # )
+                    # for cmd in commands:
+                    #     temp_hex_string = "".join("{:02x}".format(x) for x in cmd)
+                    #     r_client.lpush("lbcommands", temp_hex_string)
+                    publish.multiple(
+                        msgs,
+                        hostname=MQTT_HOST,
+                        port=MQTT_PORT,
+                        auth={"username": MQTT_USERNAME, "password": MQTT_PASSWORD},
+                    )
     # client.user_data_set({"r_client": r_client, "topic": DEV_MAN_TOPIC})
 
     # Blocking call that processes network traffic, dispatches callbacks and
