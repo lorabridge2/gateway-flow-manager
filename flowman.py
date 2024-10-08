@@ -180,6 +180,7 @@ def main():
                                 {
                                     "confirmed": False,
                                     "fPort": 10,
+                                    "devEui": "2000000000000001",
                                     "data": base64.b64encode(
                                         "".join(
                                             "{:02x}".format(x) for x in cmd
