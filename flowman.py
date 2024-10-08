@@ -189,11 +189,15 @@ def main():
                                     "confirmed": True,
                                     "fPort": 10,
                                     "devEui": "2000000000000001",
-                                    "data": base64.b64encode(
+                                    "data": 
                                         "".join(
                                             "{:02x}".format(x) for x in cmd
-                                        ).encode(),
-                                    ).decode(),
+                                        ),
+                                    # "data": base64.b64encode(
+                                    #     "".join(
+                                    #         "{:02x}".format(x) for x in cmd
+                                    #     ).encode(),
+                                    # ).decode(),
                                 }
                             ),
                         }
