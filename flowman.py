@@ -138,6 +138,10 @@ def main():
     r_client = redis.Redis(
         host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True
     )
+
+    while item := r_client.rpop(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-queue"])):
+        process_flow(item)
+
     pubsub = r_client.pubsub(ignore_subscribe_messages=True)
     pubsub.subscribe(
         "__keyspace@0__:" + REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-queue"])
@@ -158,59 +162,16 @@ def main():
             flow = r_client.rpop(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-queue"]))
             # print(flow)
             if flow:
-                flow = json.loads(flow)
-                flow["nodes"] = json.loads(flow["nodes"])
-                flow["edges"] = json.loads(flow["edges"])
-                print("b")
-                commands = parse_new_flow(flow, r_client)
-
-                # if not flow_exists(flow["id"], r_client):
-                #     print("c")
-                #     commands = parse_new_flow(flow, r_client)
-                # else:
-                #     print("d")
-                #     commands = diff_flow(flow)
-
-                if commands:
-                    msgs = [
-                        {
-                            "topic": "application/c42cfa44-9586-4266-834b-bd412c33c488/device/2000000000000001/command/down",
-                            # "topic": "eu868/gateway/aa555a0000000101/command/down",
-                            "payload": json.dumps(
-                                {
-                                    "confirmed": True,
-                                    "fPort": 10,
-                                    "devEui": "2000000000000001",
-                                    "data": base64.b64encode(bytes(cmd)).decode()
-                                    # "data": "".join("{:02x}".format(x) for x in cmd),
-                                    # "data": base64.b64encode(
-                                    #     "".join(
-                                    #         "{:02x}".format(x) for x in cmd
-                                    #     ).encode(),
-                                    # ).decode(),
-                                }
-                            ),
-                        }
-                        for cmd in commands
-                    ]
-
-                    for msg in msgs:
-                        publish.single(
-                            msg["topic"],
-                            msg["payload"],
-                            hostname=MQTT_HOST,
-                            port=MQTT_PORT,
-                            auth={"username": MQTT_USERNAME, "password": MQTT_PASSWORD},
-                        )
-                    # for cmd in commands:
-                    #     temp_hex_string = "".join("{:02x}".format(x) for x in cmd)
-                    #     r_client.lpush("lbcommands", temp_hex_string)
-                    # publish.multiple(
-                    #     msgs,
-                    #     hostname=MQTT_HOST,
-                    #     port=MQTT_PORT,
-                    #     auth={"username": MQTT_USERNAME, "password": MQTT_PASSWORD},
-                    # )
+                process_flow(flow)
+                # for cmd in commands:
+                #     temp_hex_string = "".join("{:02x}".format(x) for x in cmd)
+                #     r_client.lpush("lbcommands", temp_hex_string)
+                # publish.multiple(
+                #     msgs,
+                #     hostname=MQTT_HOST,
+                #     port=MQTT_PORT,
+                #     auth={"username": MQTT_USERNAME, "password": MQTT_PASSWORD},
+                # )
 
     # client.user_data_set({"r_client": r_client, "topic": DEV_MAN_TOPIC})
 
@@ -219,6 +180,53 @@ def main():
     # Other loop*() functions are available that give a threaded interface and a
     # manual interface.
     # client.loop_forever()
+
+
+def process_flow(flow):
+    flow = json.loads(flow)
+    flow["nodes"] = json.loads(flow["nodes"])
+    flow["edges"] = json.loads(flow["edges"])
+    print("b")
+    commands = parse_new_flow(flow, r_client)
+
+    # if not flow_exists(flow["id"], r_client):
+    #     print("c")
+    #     commands = parse_new_flow(flow, r_client)
+    # else:
+    #     print("d")
+    #     commands = diff_flow(flow)
+
+    if commands:
+        msgs = [
+            {
+                "topic": "application/c42cfa44-9586-4266-834b-bd412c33c488/device/2000000000000001/command/down",
+                # "topic": "eu868/gateway/aa555a0000000101/command/down",
+                "payload": json.dumps(
+                    {
+                        "confirmed": True,
+                        "fPort": 10,
+                        "devEui": "2000000000000001",
+                        "data": base64.b64encode(bytes(cmd)).decode(),
+                        # "data": "".join("{:02x}".format(x) for x in cmd),
+                        # "data": base64.b64encode(
+                        #     "".join(
+                        #         "{:02x}".format(x) for x in cmd
+                        #     ).encode(),
+                        # ).decode(),
+                    }
+                ),
+            }
+            for cmd in commands
+        ]
+
+        for msg in msgs:
+            publish.single(
+                msg["topic"],
+                msg["payload"],
+                hostname=MQTT_HOST,
+                port=MQTT_PORT,
+                auth={"username": MQTT_USERNAME, "password": MQTT_PASSWORD},
+            )
 
 
 def get_node_key(flow_id: str, node_id: str, r_client: redis.Redis) -> int:
