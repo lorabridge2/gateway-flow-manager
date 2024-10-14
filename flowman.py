@@ -140,7 +140,7 @@ def main():
     )
 
     while item := r_client.rpop(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-queue"])):
-        process_flow(item)
+        process_flow(item, r_client)
 
     pubsub = r_client.pubsub(ignore_subscribe_messages=True)
     pubsub.subscribe(
@@ -162,7 +162,7 @@ def main():
             flow = r_client.rpop(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-queue"]))
             # print(flow)
             if flow:
-                process_flow(flow)
+                process_flow(flow, r_client)
                 # for cmd in commands:
                 #     temp_hex_string = "".join("{:02x}".format(x) for x in cmd)
                 #     r_client.lpush("lbcommands", temp_hex_string)
@@ -182,7 +182,7 @@ def main():
     # client.loop_forever()
 
 
-def process_flow(flow):
+def process_flow(flow, r_client):
     flow = json.loads(flow)
     flow["nodes"] = json.loads(flow["nodes"])
     flow["edges"] = json.loads(flow["edges"])
