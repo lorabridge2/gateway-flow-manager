@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding=utf-8 -*-
 
-import struct
-import paho.mqtt.client as mqtt
-import json
-import os
-import sys
-import redis
-import logging
-import device_classes
 import base64
+import json
+import logging
+import os
+import struct
+import sys
+from enum import IntEnum
+from pprint import pprint
+
+import device_classes
 import paho.mqtt.publish as publish
+import redis
 
 
 def get_fileenv(var: str):
@@ -64,43 +66,21 @@ NODE_TYPES = {
 }
 
 
-# The callback for when the client receives a CONNACK response from the server.
-# def on_connect(client, userdata, flags, rc):
-#     logging.info("Connected with result code " + str(rc))
+class action_bytes(IntEnum):
+    REMOVE_NODE = 0
+    ADD_NODE = 1
+    ADD_DEVICE = 2
+    PARAMETER_UPDATE = 3
+    CONNECT_NODE = 4
+    DISCONNECT_NODE = 5
+    ENABLE_FLOW = 6
+    DISABLE_FLOW = 7
+    TIME_SYNC_RESPONSE = 8
+    ADD_FLOW = 9
+    FLOW_COMPLETE = 10
+    REMOVE_FLOW = 11
+    UPLOAD_FLOW = 12
 
-#     # Subscribing in on_connect() means that if we lose the connection and
-#     # reconnect then subscriptions will be renewed.
-#     client.subscribe(userdata['topic'] + '/#')
-
-
-# The callback for when a PUBLISH message is received from the server.
-# def on_message(client, userdata, msg):
-#     rclient = userdata['r_client']
-#     data = json.loads(msg.payload)
-
-#     if not rclient.exists(
-#         (rkey := REDIS_SEPARATOR.join([REDIS_PREFIX, (ieee := msg.topic.removeprefix(DEV_MAN_TOPIC + "/"))]))):
-#         index = rclient.incr(REDIS_SEPARATOR.join([REDIS_PREFIX, "dev_index"]))
-#         dev_data = {"ieee": ieee, "id": index, "measurement": json.dumps(list(data.keys()))}
-#         rclient.hset(rkey, mapping=dev_data)
-#         rclient.sadd(REDIS_SEPARATOR.join([REDIS_PREFIX, "devices"]), rkey)
-#         dev_data['measurement'] = json.loads(dev_data['measurement'])
-#         dev_data.update({"value": data})
-#         client.publish(DISCOVERY_TOPIC, json.dumps(dev_data))
-#         client.publish(STATE_TOPIC, json.dumps(dev_data))
-#         # discovery
-#     else:
-#         # state update
-#         dev_data = rclient.hgetall(rkey)
-#         str_data = json.dumps(list(data.keys()))
-#         if dev_data['measurement'] != str_data:
-#             dev_data['measurement'] = str_data
-#             rclient.hset(rkey, mapping=dev_data)
-#         dev_data['measurement'] = json.loads(dev_data['measurement'])
-#         dev_data.update({"value": data})
-#         if dev_data['measurement'] != str_data:
-#             client.publish(DISCOVERY_TOPIC, json.dumps(dev_data))
-#         client.publish(STATE_TOPIC, json.dumps(dev_data))
 
 flow_ui_key = REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-ui-key"])
 flow_lb_key = REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-lb-key"])
@@ -122,18 +102,6 @@ def main():
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO
     )
-    # client = mqtt.Client()
-    # client.on_connect = on_connect
-    # client.on_message = on_message
-
-    # client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
-    # client.connect(MQTT_HOST, MQTT_PORT, 60)
-    # client.user_data_set({"topic": DEV_MAN_TOPIC})
-
-    # msgs = [
-    #     {"topic": "paho/test/topic", "payload": "multiple 1"},
-    #     ("paho/test/topic", "multiple 2", 0, False),
-    # ]
 
     r_client = redis.Redis(
         host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True
@@ -146,16 +114,7 @@ def main():
     pubsub.subscribe(
         "__keyspace@0__:" + REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-queue"])
     )
-    # payload = {
-    #     "confirmed": False,  # whether the payload must be sent as confirmed data down or not
-    #     "fPort": 10,  # FPort to use (must be > 0)
-    #     "data": None,  # base64 encoded data (plaintext, will be encrypted by ChirpStack Network Server)
-    # }
 
-    # res = r_client.llen(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-queue"]))
-    # print(res)
-
-    # TODO grab everything that is already in the flow-queue
     for msg in pubsub.listen():
         if msg["type"] == "message" and msg["data"] == "lpush":
             print(msg)
@@ -163,38 +122,36 @@ def main():
             # print(flow)
             if flow:
                 process_flow(flow, r_client)
-                # for cmd in commands:
-                #     temp_hex_string = "".join("{:02x}".format(x) for x in cmd)
-                #     r_client.lpush("lbcommands", temp_hex_string)
-                # publish.multiple(
-                #     msgs,
-                #     hostname=MQTT_HOST,
-                #     port=MQTT_PORT,
-                #     auth={"username": MQTT_USERNAME, "password": MQTT_PASSWORD},
-                # )
-
-    # client.user_data_set({"r_client": r_client, "topic": DEV_MAN_TOPIC})
-
-    # Blocking call that processes network traffic, dispatches callbacks and
-    # handles reconnecting.
-    # Other loop*() functions are available that give a threaded interface and a
-    # manual interface.
-    # client.loop_forever()
 
 
-def process_flow(flow, r_client):
-    flow = json.loads(flow)
+def process_flow(task, r_client):
+    task = json.loads(task)
+    flow = task["flow"]
     flow["nodes"] = json.loads(flow["nodes"])
     flow["edges"] = json.loads(flow["edges"])
     print("b")
-    commands = parse_new_flow(flow, r_client)
-
-    # if not flow_exists(flow["id"], r_client):
-    #     print("c")
-    #     commands = parse_new_flow(flow, r_client)
-    # else:
-    #     print("d")
-    #     commands = diff_flow(flow)
+    commands = []
+    match task["task"]:
+        case "deploy":
+            print("deploy")
+            # commands = parse_new_flow(flow, r_client)
+            if not flow_exists(flow["id"], r_client):
+                print("add new")
+                commands = parse_new_flow(flow, r_client)
+            else:
+                print("diff")
+                commands = diff_flow(flow, r_client)
+        case "enable":
+            print("enable")
+            commands = enable_flow(flow, r_client)
+        case "disable":
+            print("disable")
+            commands = disable_flow(flow, r_client)
+        case "delete":
+            print("delete")
+            commands = del_flow(flow, r_client)
+        case _:
+            print("unknown task command")
 
     if commands:
         msgs = [
@@ -207,18 +164,13 @@ def process_flow(flow, r_client):
                         "fPort": 10,
                         "devEui": "2000000000000001",
                         "data": base64.b64encode(bytes(cmd)).decode(),
-                        # "data": "".join("{:02x}".format(x) for x in cmd),
-                        # "data": base64.b64encode(
-                        #     "".join(
-                        #         "{:02x}".format(x) for x in cmd
-                        #     ).encode(),
-                        # ).decode(),
                     }
                 ),
             }
             for cmd in commands
         ]
 
+        pprint(commands)
         for msg in msgs:
             publish.single(
                 msg["topic"],
@@ -272,8 +224,8 @@ def _get_key(id: str, r_client: redis.Redis, lb_dict: str, ui_dict: str):
 
 
 def del_flow_id(id: str, r_client: redis.Redis):
-    lb_node_dict = REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", id, "lb-nodes"])
-    ui_node_dict = REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", id, "ui-nodes"])
+    lb_node_dict = REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", str(id), "lb-nodes"])
+    ui_node_dict = REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", str(id), "ui-nodes"])
     lb_id = r_client.hget(flow_ui_key, id)
     if lb_id:
         r_client.hdel(flow_ui_key, [id])
@@ -293,143 +245,189 @@ def del_node_id(id: str, r_client: redis.Redis):
         raise NotImplementedError("Edge deletion missing")
 
 
+type_parameter_commands = {
+    "hysteresis": {
+        "min": lambda flow_id_lb, node_id_lb, value: [
+            action_bytes.PARAMETER_UPDATE,
+            flow_id_lb,
+            node_id_lb,
+            0,
+            4,
+            2,
+            *list(struct.pack("!f", float(value))),
+        ],
+        "max": lambda flow_id_lb, node_id_lb, value: [
+            action_bytes.PARAMETER_UPDATE,
+            flow_id_lb,
+            node_id_lb,
+            1,
+            4,
+            2,
+            *list(struct.pack("!f", float(value))),
+        ],
+    },
+    "countdown": {
+        "counter": lambda flow_id_lb, node_id_lb, value: [
+            action_bytes.PARAMETER_UPDATE,
+            flow_id_lb,
+            node_id_lb,
+            0,
+            4,
+            1,
+            *list(struct.pack("!i", int(value))),
+        ]
+    },
+    "timer": {
+        "start_hour": lambda flow_id_lb, node_id_lb, value: [
+            action_bytes.PARAMETER_UPDATE,
+            flow_id_lb,
+            node_id_lb,
+            0,
+            1,
+            1,
+            int(value),
+        ],
+        "stop_hour": lambda flow_id_lb, node_id_lb, value: [
+            action_bytes.PARAMETER_UPDATE,
+            flow_id_lb,
+            node_id_lb,
+            1,
+            1,
+            1,
+            int(value),
+        ],
+        "start_minute": lambda flow_id_lb, node_id_lb, value: [
+            action_bytes.PARAMETER_UPDATE,
+            flow_id_lb,
+            node_id_lb,
+            2,
+            1,
+            1,
+            int(value),
+        ],
+        "stop_minute": lambda flow_id_lb, node_id_lb, value: [
+            action_bytes.PARAMETER_UPDATE,
+            flow_id_lb,
+            node_id_lb,
+            3,
+            1,
+            1,
+            int(value),
+        ],
+    },
+}
+
+
+def _add_node(flow_id_lb, flow_id_ui, node, r_client) -> list:
+    node_id_lb = get_node_key(flow_id_ui, node["id"], r_client)
+    node_type_lb = NODE_TYPES[node["type"]]
+    commands = []
+    if node["type"] in ["binarysensor", "binarydevice"]:
+        print(node)
+        # add device
+        # add device, flow id, node id, Binarysensor=3||Numericsensor=4, LB Device number, attribute
+        try:
+            attr_id = int(
+                device_classes.DEVICE_CLASSES.index(node["data"]["attribute"])
+            )
+        except ValueError:
+            raise UnknownAttributeError("attribute unknown")
+        try:
+            dev_id = int(node["data"]["device"])
+        except ValueError:
+            raise UnknownDeviceError("device unknown")
+        # TODO change direkt number to name and lookup (also get list of available sensors and devices)
+        commands.append(
+            [
+                action_bytes.ADD_DEVICE,
+                flow_id_lb,
+                node_id_lb,
+                node_type_lb,
+                dev_id,
+                attr_id,
+            ]
+        )
+    else:
+        # add node
+        # add node, flow id, node id, node type
+        commands.append([action_bytes.ADD_NODE, flow_id_lb, node_id_lb, node_type_lb])
+        match node["type"]:
+            case "hysteresis":
+                # min value
+                # add param, flow id, node id, param index 0, 4 bytes, float 2, min value as 4 ints representing the bytes
+                commands.append(
+                    type_parameter_commands["hysteresis"]["min"](
+                        flow_id_lb, node_id_lb, node["data"]["min"]
+                    )
+                )
+                # max value
+                # add param, flow id, node id, param index 1, 4 bytes, float 2, max value as 4 ints representing the bytes
+                commands.append(
+                    type_parameter_commands["hysteresis"]["max"](
+                        flow_id_lb, node_id_lb, node["data"]["max"]
+                    )
+                )
+            case "countdown":
+                # add param, flow id, node id, param index 0, 4 bytes, integer 1, counter as 4 byte integer value
+                commands.append(
+                    type_parameter_commands["countdown"]["counter"](
+                        flow_id_lb, node_id_lb, node["data"]["counter"]
+                    )
+                )
+            case "timer":
+                start = node["data"]["start"].split(":")
+                stop = node["data"]["stop"].split(":")
+                # hour min
+                # add param, flow id, node id, param index 0, 1 byte, integer 1, hour min as int
+                commands.append(
+                    type_parameter_commands["timer"]["start_hour"](
+                        flow_id_lb, node_id_lb, start[0]
+                    )
+                )
+                # hour max
+                # add param, flow id, node id, param index 1, 1 byte, integer 1, hour max as int
+                commands.append(
+                    type_parameter_commands["timer"]["stop_hour"](
+                        flow_id_lb, node_id_lb, stop[0]
+                    )
+                )
+                # minute min
+                # add param, flow id, node id, param index 2, 1 byte, integer 1, minute min as int
+                commands.append(
+                    type_parameter_commands["timer"]["start_minute"](
+                        flow_id_lb, node_id_lb, start[1]
+                    )
+                )
+                # minute max
+                # add param, flow id, node id, param index 3, 1 byte, integer 1, minute max as int
+                commands.append(
+                    type_parameter_commands["timer"]["stop_minute"](
+                        flow_id_lb, node_id_lb, stop[1]
+                    )
+                )
+    return commands
+
+
 def parse_new_flow(flow: any, r_client: redis.Redis):
     # - save flow for diff
     #
     commands = []
     # TODO autoremove flow ONLY for now
     if flow_exists(flow["id"], r_client):
-        commands.append([11, get_flow_key(flow["id"], r_client)])
+        commands.append([action_bytes.REMOVE_FLOW, get_flow_key(flow["id"], r_client)])
     print("hy")
     flow_id_lb = get_flow_key(flow["id"], r_client)
     print(flow)
     # add flow
-    commands.append([9, flow_id_lb])
+    commands.append([action_bytes.ADD_FLOW, flow_id_lb])
     for node in flow["nodes"]:
-        node_id_lb = get_node_key(flow["id"], node["id"], r_client)
-        node_type_lb = NODE_TYPES[node["type"]]
-        if node["type"] in ["binarysensor", "binarydevice"]:
-            print(node)
-            # add device
-            # add device, flow id, node id, Binarysensor=3||Numericsensor=4, LB Device number, attribute
-            try:
-                attr_id = int(
-                    device_classes.DEVICE_CLASSES.index(node["data"]["attribute"])
-                )
-            except ValueError:
-                raise UnknownAttributeError("attribute unknown")
-            try:
-                dev_id = int(node["data"]["device"])
-            except ValueError:
-                raise UnknownDeviceError("device unknown")
-            # TODO change direkt number to name and lookup (also get list of available sensors and devices)
-            commands.append([2, flow_id_lb, node_id_lb, node_type_lb, dev_id, attr_id])
-        else:
-            # add node
-            # add node, flow id, node id, node type
-            commands.append([1, flow_id_lb, node_id_lb, node_type_lb])
-            match node["type"]:
-                case "hysteresis":
-                    # min value
-                    # add param, flow id, node id, param index 0, 4 bytes, float 2, min value as 4 ints representing the bytes
-                    commands.append(
-                        [
-                            3,
-                            flow_id_lb,
-                            node_id_lb,
-                            0,
-                            4,
-                            2,
-                            *list(struct.pack("!f", float(node["data"]["min"]))),
-                        ]
-                    )
-                    # max value
-                    # add param, flow id, node id, param index 1, 4 bytes, float 2, max value as 4 ints representing the bytes
-                    commands.append(
-                        [
-                            3,
-                            flow_id_lb,
-                            node_id_lb,
-                            1,
-                            4,
-                            2,
-                            *list(struct.pack("!f", float(node["data"]["max"]))),
-                        ]
-                    )
-                case "countdown":
-                    # add param, flow id, node id, param index 0, 4 bytes, integer 1, counter as 4 byte integer value
-                    commands.append(
-                        [
-                            3,
-                            flow_id_lb,
-                            node_id_lb,
-                            0,
-                            4,
-                            1,
-                            *list(struct.pack("!i", int(node["data"]["counter"]))),
-                        ]
-                    )
-                case "timer":
-                    start = node["data"]["start"].split(":")
-                    stop = node["data"]["stop"].split(":")
-                    # hour min
-                    # add param, flow id, node id, param index 0, 1 byte, integer 1, hour min as int
-                    commands.append(
-                        [
-                            3,
-                            flow_id_lb,
-                            node_id_lb,
-                            0,
-                            1,
-                            1,
-                            int(start[0]),
-                        ]
-                    )
-                    # hour max
-                    # add param, flow id, node id, param index 1, 1 byte, integer 1, hour max as int
-                    commands.append(
-                        [
-                            3,
-                            flow_id_lb,
-                            node_id_lb,
-                            1,
-                            1,
-                            1,
-                            int(stop[0]),
-                        ]
-                    )
-                    # minute min
-                    # add param, flow id, node id, param index 2, 1 byte, integer 1, minute min as int
-                    commands.append(
-                        [
-                            3,
-                            flow_id_lb,
-                            node_id_lb,
-                            2,
-                            1,
-                            1,
-                            int(start[1]),
-                        ]
-                    )
-                    # minute max
-                    # add param, flow id, node id, param index 3, 1 byte, integer 1, minute max as int
-                    commands.append(
-                        [
-                            3,
-                            flow_id_lb,
-                            node_id_lb,
-                            3,
-                            1,
-                            1,
-                            int(stop[1]),
-                        ]
-                    )
+        commands.extend(_add_node(flow_id_lb, flow["id"], node, r_client))
 
     for edge in flow["edges"]:
         # connect node, flow id, output node id (source), output id, input node id (target), input id
         commands.append(
             [
-                4,
+                action_bytes.CONNECT_NODE,
                 flow_id_lb,
                 get_node_key(flow["id"], edge["source"], r_client),
                 0,
@@ -438,38 +436,180 @@ def parse_new_flow(flow: any, r_client: redis.Redis):
             ]
         )
     # flow complete
-    commands.append([10, flow_id_lb])
+    commands.append([action_bytes.FLOW_COMPLETE, flow_id_lb])
     # upload flow
-    commands.append([12, flow_id_lb])
+    commands.append([action_bytes.UPLOAD_FLOW, flow_id_lb])
     # enable flow
-    commands.append([6, flow_id_lb])
-    from pprint import pprint
+    commands.append([action_bytes.ENABLE_FLOW, flow_id_lb])
 
-    pprint(commands)
+    # save current flow for diff
+    r_client.set(
+        REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", flow["id"]]), json.dumps(flow)
+    )
+
     return commands
 
 
-def diff_flow(flow: any):
+def diff_flow(flow: any, r_client: redis.Redis):
     # - new nodes
     # - deleted nodes
     # - new edges
     # - deleted edges
     # - changed params
-    pass
+    # raise NotImplementedError("Edge deletion missing")
+    flow_id_lb = get_flow_key(flow["id"], r_client)
+    old_flow = json.loads(
+        r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", flow["id"]]))
+    )
+    nodes = set(x["id"] for x in flow["nodes"])
+    old_nodes = {x["id"]: x for x in old_flow["nodes"]}
+    edges = set(x["id"] for x in flow["edges"])
+    old_edges = {x["id"]: x for x in old_flow["edges"]}
+    new_edges = []
+    removed_edges = []
+    new_nodes = []
+    removed_nodes = []
+    changed_nodes = []
+    commands = []
+    for node in flow["nodes"]:
+        if node["id"] not in old_nodes:
+            new_nodes.append(node)
+        else:
+            if node["data"] != old_nodes[node["id"]]["data"]:
+                changed_nodes.append(node)
+    for node in old_flow["nodes"]:
+        if node["id"] not in nodes:
+            removed_nodes.append(node)
+
+    for node in removed_nodes:
+        node_id_lb = get_node_key(flow["id"], node["id"], r_client)
+        commands.append([action_bytes.REMOVE_NODE, flow_id_lb, node_id_lb])
+
+    for node in new_nodes:
+        commands.extend(_add_node(flow_id_lb, flow["id"], node, r_client))
+
+    for node in changed_nodes:
+        print("changed")
+        print(changed_nodes)
+        node_id_lb = get_node_key(flow["id"], node["id"], r_client)
+        match node["type"]:
+            case "binarysensor" | "binarydevice":
+                commands.append([action_bytes.REMOVE_NODE, flow_id_lb, node_id_lb])
+                commands.extend(_add_node(flow_id_lb, flow["id"], node, r_client))
+            case "hysteresis":
+                if node["data"]["min"] != old_nodes[node["id"]]["data"]["min"]:
+                    commands.append(
+                        type_parameter_commands["hysteresis"]["min"](
+                            flow_id_lb, node_id_lb, node["data"]["min"]
+                        )
+                    )
+
+                if node["data"]["max"] != old_nodes[node["id"]]["data"]["max"]:
+                    commands.append(
+                        type_parameter_commands["hysteresis"]["max"](
+                            flow_id_lb, node_id_lb, node["data"]["max"]
+                        )
+                    )
+            case "countdown":
+                commands.append(
+                    type_parameter_commands["countdown"]["counter"](
+                        flow_id_lb, node_id_lb, node["data"]["counter"]
+                    )
+                )
+            case "timer":
+                start = node["data"]["start"].split(":")
+                stop = node["data"]["stop"].split(":")
+                start_old = old_nodes[node["id"]]["data"]["start"].split(":")
+                stop_old = old_nodes[node["id"]]["data"]["stop"].split(":")
+                if start[0] != start_old[0]:
+                    commands.append(
+                        type_parameter_commands["timer"]["start_hour"](
+                            flow_id_lb, node_id_lb, start[0]
+                        )
+                    )
+                if stop[0] != stop_old[0]:
+                    commands.append(
+                        type_parameter_commands["timer"]["stop_hour"](
+                            flow_id_lb, node_id_lb, stop[0]
+                        )
+                    )
+                if start[1] != start_old[1]:
+                    commands.append(
+                        type_parameter_commands["timer"]["start_minute"](
+                            flow_id_lb, node_id_lb, start[1]
+                        )
+                    )
+                if stop[1] != stop_old[1]:
+                    commands.append(
+                        type_parameter_commands["timer"]["stop_minute"](
+                            flow_id_lb, node_id_lb, stop[1]
+                        )
+                    )
+
+    for edge in flow["edges"]:
+        if edge["id"] not in old_edges:
+            new_edges.append(edge)
+
+    for edge in old_flow["edges"]:
+        if edge["id"] not in edges:
+            removed_edges.append(edge)
+
+    for edge in new_edges:
+        commands.append(
+            [
+                action_bytes.CONNECT_NODE,
+                flow_id_lb,
+                get_node_key(flow["id"], edge["source"], r_client),
+                0,
+                get_node_key(flow["id"], edge["target"], r_client),
+                0,
+            ]
+        )
+
+    for edge in removed_edges:
+        commands.append([action_bytes.DISCONNECT_NODE, edge["source"], 0])
+
+    # save current flow for diff
+    r_client.set(
+        REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", flow["id"]]), json.dumps(flow)
+    )
+
+    if commands:
+        # flow complete
+        commands.append([action_bytes.FLOW_COMPLETE, flow_id_lb])
+        # upload flow
+        commands.append([action_bytes.UPLOAD_FLOW, flow_id_lb])
+        # enable flow
+        commands.append([action_bytes.ENABLE_FLOW, flow_id_lb])
+    return commands
 
 
 def flow_exists(id: str, r_client: redis.Redis) -> bool:
     return r_client.hexists(flow_ui_key, id)
 
 
-def tranform_commands(compressed_commands: list):
-    res = []
-    for cmd in compressed_commands:
-        temp_hex_string = "".join("{:02x}".format(x) for x in cmd)
-        res.append(temp_hex_string)
-        # print(temp_hex_string)
-        # redis_client.lpush("lbcommands", temp_hex_string)
-    return temp_hex_string
+def del_flow(flow: any, r_client: redis.Redis) -> list:
+    commands = []
+    if flow_exists(flow["id"], r_client):
+        flow_id_lb = get_flow_key(flow["id"], r_client)
+        commands.append([action_bytes.REMOVE_FLOW, flow_id_lb])
+        del_flow_id(flow_id_lb, r_client)
+        r_client.delete(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", flow["id"]]))
+    return commands
+
+
+def disable_flow(flow: any, r_client: redis.Redis) -> list:
+    commands = []
+    if flow_exists(flow["id"], r_client):
+        commands.append([action_bytes.DISABLE_FLOW, get_flow_key(flow["id"], r_client)])
+    return commands
+
+
+def enable_flow(flow: any, r_client: redis.Redis) -> list:
+    commands = []
+    if flow_exists(flow["id"], r_client):
+        commands.append([action_bytes.ENABLE_FLOW, get_flow_key(flow["id"], r_client)])
+    return commands
 
 
 if __name__ == "__main__":
