@@ -127,6 +127,8 @@ def main():
 def process_flow(task, r_client):
     task = json.loads(task)
     flow = task["flow"]
+    if not all([x in flow for x in ["nodes", "edges"]]):
+        return
     flow["nodes"] = json.loads(flow["nodes"])
     flow["edges"] = json.loads(flow["edges"])
     print("b")
@@ -457,10 +459,16 @@ def diff_flow(flow: any, r_client: redis.Redis):
     # - deleted edges
     # - changed params
     # raise NotImplementedError("Edge deletion missing")
+    commands = []
     flow_id_lb = get_flow_key(flow["id"], r_client)
-    old_flow = json.loads(
-        r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", flow["id"]]))
-    )
+    old_flow = r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", flow["id"]]))
+    if not old_flow:
+        # no old flow, means that parse_new_flow likely crashed before
+        # so try to readd
+        commands.extend(del_flow(flow, r_client))
+        commands.extend(parse_new_flow(flow,r_client))
+        return commands
+    old_flow = json.loads(old_flow)
     nodes = set(x["id"] for x in flow["nodes"])
     old_nodes = {x["id"]: x for x in old_flow["nodes"]}
     edges = set(x["id"] for x in flow["edges"])
@@ -470,7 +478,6 @@ def diff_flow(flow: any, r_client: redis.Redis):
     new_nodes = []
     removed_nodes = []
     changed_nodes = []
-    commands = []
     for node in flow["nodes"]:
         if node["id"] not in old_nodes:
             new_nodes.append(node)
@@ -567,7 +574,7 @@ def diff_flow(flow: any, r_client: redis.Redis):
         )
 
     for edge in removed_edges:
-        commands.append([action_bytes.DISCONNECT_NODE, edge["source"], 0])
+        commands.append([action_bytes.DISCONNECT_NODE, get_node_key(flow["id"], edge["source"], r_client), 0])
 
     # save current flow for diff
     r_client.set(
