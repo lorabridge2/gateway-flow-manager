@@ -2,6 +2,7 @@
 # -*- coding=utf-8 -*-
 
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -54,6 +55,7 @@ REDIS_DB = int(os.environ.get("DEV_REDIS_DB", 0))
 REDIS_SEPARATOR = ":"
 REDIS_PREFIX = "lorabridge:flowman"
 COMMANDS_PREFIX = "commands"
+LAST_COMMANDS_PREFIX = "last_commands"
 
 NODE_TYPES = {
     "binarydevice": 1,
@@ -108,15 +110,98 @@ def main():
         process_flow(item, r_client)
 
     pubsub = r_client.pubsub(ignore_subscribe_messages=True)
-    pubsub.subscribe("__keyspace@0__:" + REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-queue"]))
+    pubsub.subscribe(
+        "__keyspace@0__:" + REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-queue"]),
+        "__keyspace@0__:" + REDIS_SEPARATOR.join([REDIS_PREFIX, "hash-check"]),
+    )
 
     for msg in pubsub.listen():
         if msg["type"] == "message" and msg["data"] == "lpush":
             print(msg)
-            flow = r_client.rpop(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-queue"]))
-            # print(flow)
-            if flow:
-                process_flow(flow, r_client)
+            if msg["channel"] == "__keyspace@0__:" + REDIS_SEPARATOR.join(
+                [REDIS_PREFIX, "flow-queue"]
+            ):
+                flow = r_client.rpop(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-queue"]))
+                # print(flow)
+                if flow:
+                    process_flow(flow, r_client)
+            elif msg["channel"] == "__keyspace@0__:" + REDIS_SEPARATOR.join(
+                [REDIS_PREFIX, "hash-check"]
+            ):
+                check = r_client.rpop(REDIS_SEPARATOR.join([REDIS_PREFIX, "hash-check"]))
+                commands = check_hash(check, r_client)
+                send_commands(flow["id"], commands, r_client, history=False)
+
+
+def check_hash(check: str, r_client: redis.Redis) -> list:
+    print(check)
+    check = json.loads(check)
+    print(check)
+    ui_key = lookup_ui_key(check["id"], r_client)
+    hash_commands = []
+    if tmp := r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, COMMANDS_PREFIX, ui_key])):
+        hash_commands = json.loads(tmp)
+
+    print(hash_commands)
+    commands = []
+    hash = bytes(bytearray.fromhex(hashlib.sha1(repr(hash_commands).encode()).hexdigest()[-16:]))
+    print(hash)
+    if check["hash"] == hash:
+        print("correct")
+        if flow := get_flow(ui_key):
+            commands.extend(upload_flow(flow, r_client))
+            commands.extend(enable_flow(flow, r_client))
+        return commands
+    else:
+        print("incorrect")
+        last_commands = json.loads(
+            r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, LAST_COMMANDS_PREFIX, flow["id"]]))
+        )
+        return last_commands
+
+
+def send_commands(id, commands, r_client, history=True):
+    msgs = [
+        {
+            "topic": "application/c42cfa44-9586-4266-834b-bd412c33c488/device/2000000000000001/command/down",
+            # "topic": "eu868/gateway/aa555a0000000101/command/down",
+            "payload": json.dumps(
+                {
+                    "confirmed": True,
+                    "fPort": 10,
+                    "devEui": "2000000000000001",
+                    "data": base64.b64encode(bytes(cmd)).decode(),
+                }
+            ),
+        }
+        for cmd in commands
+    ]
+
+    # save last commands for hash retry
+    r_client.set(
+        REDIS_SEPARATOR.join([REDIS_PREFIX, LAST_COMMANDS_PREFIX, id]),
+        json.dumps(commands),
+    )
+
+    if history:
+        prev_cmds = []
+        if cmds := r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, COMMANDS_PREFIX, id])):
+            prev_cmds = json.loads(cmds)
+
+        prev_cmds.extend(commands)
+        r_client.set(
+            REDIS_SEPARATOR.join([REDIS_PREFIX, COMMANDS_PREFIX, id]), json.dumps(prev_cmds)
+        )
+
+    pprint(commands)
+    for msg in msgs:
+        publish.single(
+            msg["topic"],
+            msg["payload"],
+            hostname=MQTT_HOST,
+            port=MQTT_PORT,
+            auth={"username": MQTT_USERNAME, "password": MQTT_PASSWORD},
+        )
 
 
 def process_flow(task, r_client):
@@ -151,34 +236,41 @@ def process_flow(task, r_client):
             print("unknown task command")
 
     if commands:
-        msgs = [
-            {
-                "topic": "application/c42cfa44-9586-4266-834b-bd412c33c488/device/2000000000000001/command/down",
-                # "topic": "eu868/gateway/aa555a0000000101/command/down",
-                "payload": json.dumps(
-                    {
-                        "confirmed": True,
-                        "fPort": 10,
-                        "devEui": "2000000000000001",
-                        "data": base64.b64encode(bytes(cmd)).decode(),
-                    }
-                ),
-            }
-            for cmd in commands
-        ]
+        send_commands(flow["id"], commands, r_client)
+        # msgs = [
+        #     {
+        #         "topic": "application/c42cfa44-9586-4266-834b-bd412c33c488/device/2000000000000001/command/down",
+        #         # "topic": "eu868/gateway/aa555a0000000101/command/down",
+        #         "payload": json.dumps(
+        #             {
+        #                 "confirmed": True,
+        #                 "fPort": 10,
+        #                 "devEui": "2000000000000001",
+        #                 "data": base64.b64encode(bytes(cmd)).decode(),
+        #             }
+        #         ),
+        #     }
+        #     for cmd in commands
+        # ]
 
-        prev_cmds = []
-        if cmds := r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, COMMANDS_PREFIX, flow["id"]])):
-            prev_cmds = json.loads(cmds)
+        # # save last commands for hash retry
+        # r_client.set(
+        #     REDIS_SEPARATOR.join([REDIS_PREFIX, LAST_COMMANDS_PREFIX, flow["id"]]),
+        #     json.dumps(commands),
+        # )
 
-        prev_cmds.extend(commands)
-        r_client.set(
-            REDIS_SEPARATOR.join([REDIS_PREFIX, COMMANDS_PREFIX, flow["id"]]), json.dumps(prev_cmds)
-        )
-        if task["task"] == "delete":
-            r_client.delete([REDIS_PREFIX, COMMANDS_PREFIX, flow["id"]])
+        # prev_cmds = []
+        # if cmds := r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, COMMANDS_PREFIX, flow["id"]])):
+        #     prev_cmds = json.loads(cmds)
 
-        pprint(commands)
+        # prev_cmds.extend(commands)
+        # r_client.set(
+        #     REDIS_SEPARATOR.join([REDIS_PREFIX, COMMANDS_PREFIX, flow["id"]]), json.dumps(prev_cmds)
+        # )
+        # if task["task"] == "delete":
+        #     r_client.delete([REDIS_PREFIX, COMMANDS_PREFIX, flow["id"]])
+
+        # pprint(commands)
         # for msg in msgs:
         #     publish.single(
         #         msg["topic"],
@@ -187,6 +279,9 @@ def process_flow(task, r_client):
         #         port=MQTT_PORT,
         #         auth={"username": MQTT_USERNAME, "password": MQTT_PASSWORD},
         #     )
+
+        if task["task"] == "delete":
+            r_client.delete([REDIS_PREFIX, COMMANDS_PREFIX, flow["id"]])
 
 
 def get_node_key(flow_id: str, node_id: str, r_client: redis.Redis) -> int:
@@ -197,6 +292,10 @@ def get_node_key(flow_id: str, node_id: str, r_client: redis.Redis) -> int:
 
 def get_flow_key(id: str, r_client: redis.Redis) -> int:
     return int(_get_key(id, r_client, flow_lb_key, flow_ui_key))
+
+
+def lookup_ui_key(id: int, r_client: redis.Redis) -> str:
+    return r_client.hget(flow_lb_key, id)
 
 
 def _get_key(id: str, r_client: redis.Redis, lb_dict: str, ui_dict: str):
@@ -461,6 +560,11 @@ def enable_flow(flow: any, r_client: redis.Redis) -> list:
     return commands
 
 
+def get_flow(id: str, r_client: redis.Redis) -> any:
+    if tmp := r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", id])):
+        return json.loads(tmp)
+
+
 def diff_flow(flow: any, r_client: redis.Redis):
     # - new nodes
     # - deleted nodes
@@ -470,14 +574,15 @@ def diff_flow(flow: any, r_client: redis.Redis):
     # raise NotImplementedError("Edge deletion missing")
     commands = []
     flow_id_lb = get_flow_key(flow["id"], r_client)
-    old_flow = r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", flow["id"]]))
+    # old_flow = r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", flow["id"]]))
+    old_flow = get_flow(flow["id"])
     if not old_flow:
         # no old flow, means that parse_new_flow likely crashed before
         # so try to readd
         commands.extend(del_flow(flow, r_client))
         commands.extend(parse_new_flow(flow, r_client))
         return commands
-    old_flow = json.loads(old_flow)
+    # old_flow = json.loads(old_flow)
     nodes = set(x["id"] for x in flow["nodes"])
     old_nodes = {x["id"]: x for x in old_flow["nodes"]}
     edges = set(x["id"] for x in flow["edges"])
