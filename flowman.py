@@ -148,7 +148,7 @@ def check_hash(check: str, r_client: redis.Redis) -> list:
     print(hash)
     if check["hash"] == hash:
         print("correct")
-        if flow := get_flow(ui_key):
+        if flow := get_flow(ui_key, r_client):
             commands.extend(upload_flow(flow, r_client))
             commands.extend(enable_flow(flow, r_client))
         return commands
@@ -575,7 +575,7 @@ def diff_flow(flow: any, r_client: redis.Redis):
     commands = []
     flow_id_lb = get_flow_key(flow["id"], r_client)
     # old_flow = r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", flow["id"]]))
-    old_flow = get_flow(flow["id"])
+    old_flow = get_flow(flow["id"], r_client)
     if not old_flow:
         # no old flow, means that parse_new_flow likely crashed before
         # so try to readd
