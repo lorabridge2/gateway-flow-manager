@@ -53,6 +53,7 @@ REDIS_DB = int(os.environ.get("DEV_REDIS_DB", 0))
 
 REDIS_SEPARATOR = ":"
 REDIS_PREFIX = "lorabridge:flowman"
+COMMANDS_PREFIX = "commands"
 
 NODE_TYPES = {
     "binarydevice": 1,
@@ -99,21 +100,15 @@ class UnknownDeviceError(ValueError):
 
 
 def main():
-    logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO
-    )
+    logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-    r_client = redis.Redis(
-        host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True
-    )
+    r_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True)
 
     while item := r_client.rpop(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-queue"])):
         process_flow(item, r_client)
 
     pubsub = r_client.pubsub(ignore_subscribe_messages=True)
-    pubsub.subscribe(
-        "__keyspace@0__:" + REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-queue"])
-    )
+    pubsub.subscribe("__keyspace@0__:" + REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-queue"]))
 
     for msg in pubsub.listen():
         if msg["type"] == "message" and msg["data"] == "lpush":
@@ -172,15 +167,26 @@ def process_flow(task, r_client):
             for cmd in commands
         ]
 
+        prev_cmds = []
+        if cmds := r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, COMMANDS_PREFIX, flow["id"]])):
+            prev_cmds = json.loads(cmds)
+
+        prev_cmds.extend(commands)
+        r_client.set(
+            REDIS_SEPARATOR.join([REDIS_PREFIX, COMMANDS_PREFIX, flow["id"]]), json.dumps(prev_cmds)
+        )
+        if task["task"] == "delete":
+            r_client.delete([REDIS_PREFIX, COMMANDS_PREFIX, flow["id"]])
+
         pprint(commands)
-        for msg in msgs:
-            publish.single(
-                msg["topic"],
-                msg["payload"],
-                hostname=MQTT_HOST,
-                port=MQTT_PORT,
-                auth={"username": MQTT_USERNAME, "password": MQTT_PASSWORD},
-            )
+        # for msg in msgs:
+        #     publish.single(
+        #         msg["topic"],
+        #         msg["payload"],
+        #         hostname=MQTT_HOST,
+        #         port=MQTT_PORT,
+        #         auth={"username": MQTT_USERNAME, "password": MQTT_PASSWORD},
+        #     )
 
 
 def get_node_key(flow_id: str, node_id: str, r_client: redis.Redis) -> int:
@@ -329,9 +335,7 @@ def _add_node(flow_id_lb, flow_id_ui, node, r_client) -> list:
         # add device
         # add device, flow id, node id, Binarysensor=3||Numericsensor=4, LB Device number, attribute
         try:
-            attr_id = int(
-                device_classes.DEVICE_CLASSES.index(node["data"]["attribute"])
-            )
+            attr_id = int(device_classes.DEVICE_CLASSES.index(node["data"]["attribute"]))
         except ValueError:
             raise UnknownAttributeError("attribute unknown")
         try:
@@ -382,16 +386,12 @@ def _add_node(flow_id_lb, flow_id_ui, node, r_client) -> list:
                 # hour min
                 # add param, flow id, node id, param index 0, 1 byte, integer 1, hour min as int
                 commands.append(
-                    type_parameter_commands["timer"]["start_hour"](
-                        flow_id_lb, node_id_lb, start[0]
-                    )
+                    type_parameter_commands["timer"]["start_hour"](flow_id_lb, node_id_lb, start[0])
                 )
                 # hour max
                 # add param, flow id, node id, param index 1, 1 byte, integer 1, hour max as int
                 commands.append(
-                    type_parameter_commands["timer"]["stop_hour"](
-                        flow_id_lb, node_id_lb, stop[0]
-                    )
+                    type_parameter_commands["timer"]["stop_hour"](flow_id_lb, node_id_lb, stop[0])
                 )
                 # minute min
                 # add param, flow id, node id, param index 2, 1 byte, integer 1, minute min as int
@@ -403,9 +403,7 @@ def _add_node(flow_id_lb, flow_id_ui, node, r_client) -> list:
                 # minute max
                 # add param, flow id, node id, param index 3, 1 byte, integer 1, minute max as int
                 commands.append(
-                    type_parameter_commands["timer"]["stop_minute"](
-                        flow_id_lb, node_id_lb, stop[1]
-                    )
+                    type_parameter_commands["timer"]["stop_minute"](flow_id_lb, node_id_lb, stop[1])
                 )
     return commands
 
@@ -415,8 +413,8 @@ def parse_new_flow(flow: any, r_client: redis.Redis):
     #
     commands = []
     # TODO autoremove flow ONLY for now
-    if flow_exists(flow["id"], r_client):
-        commands.append([action_bytes.REMOVE_FLOW, get_flow_key(flow["id"], r_client)])
+    # if flow_exists(flow["id"], r_client):
+    #     commands.append([action_bytes.REMOVE_FLOW, get_flow_key(flow["id"], r_client)])
     print("hy")
     flow_id_lb = get_flow_key(flow["id"], r_client)
     print(flow)
@@ -439,16 +437,27 @@ def parse_new_flow(flow: any, r_client: redis.Redis):
         )
     # flow complete
     commands.append([action_bytes.FLOW_COMPLETE, flow_id_lb])
-    # upload flow
-    commands.append([action_bytes.UPLOAD_FLOW, flow_id_lb])
-    # enable flow
-    commands.append([action_bytes.ENABLE_FLOW, flow_id_lb])
 
     # save current flow for diff
-    r_client.set(
-        REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", flow["id"]]), json.dumps(flow)
-    )
+    r_client.set(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", flow["id"]]), json.dumps(flow))
+    return commands
 
+
+def upload_flow(flow: any, r_client: redis.Redis) -> list:
+    commands = []
+    if flow_exists(flow["id"], r_client):
+        flow_id_lb = get_flow_key(flow["id"], r_client)
+        # upload flow
+        commands.append([action_bytes.UPLOAD_FLOW, flow_id_lb])
+    return commands
+
+
+def enable_flow(flow: any, r_client: redis.Redis) -> list:
+    commands = []
+    if flow_exists(flow["id"], r_client):
+        flow_id_lb = get_flow_key(flow["id"], r_client)
+        # enable flow
+        commands.append([action_bytes.ENABLE_FLOW, flow_id_lb])
     return commands
 
 
@@ -466,7 +475,7 @@ def diff_flow(flow: any, r_client: redis.Redis):
         # no old flow, means that parse_new_flow likely crashed before
         # so try to readd
         commands.extend(del_flow(flow, r_client))
-        commands.extend(parse_new_flow(flow,r_client))
+        commands.extend(parse_new_flow(flow, r_client))
         return commands
     old_flow = json.loads(old_flow)
     nodes = set(x["id"] for x in flow["nodes"])
@@ -574,20 +583,20 @@ def diff_flow(flow: any, r_client: redis.Redis):
         )
 
     for edge in removed_edges:
-        commands.append([action_bytes.DISCONNECT_NODE, get_node_key(flow["id"], edge["source"], r_client), 0])
+        commands.append(
+            [action_bytes.DISCONNECT_NODE, get_node_key(flow["id"], edge["source"], r_client), 0]
+        )
 
     # save current flow for diff
-    r_client.set(
-        REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", flow["id"]]), json.dumps(flow)
-    )
+    r_client.set(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", flow["id"]]), json.dumps(flow))
 
     if commands:
         # flow complete
         commands.append([action_bytes.FLOW_COMPLETE, flow_id_lb])
-        # upload flow
-        commands.append([action_bytes.UPLOAD_FLOW, flow_id_lb])
-        # enable flow
-        commands.append([action_bytes.ENABLE_FLOW, flow_id_lb])
+        # # upload flow
+        # commands.append([action_bytes.UPLOAD_FLOW, flow_id_lb])
+        # # enable flow
+        # commands.append([action_bytes.ENABLE_FLOW, flow_id_lb])
     return commands
 
 
