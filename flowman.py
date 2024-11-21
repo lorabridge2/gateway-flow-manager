@@ -132,7 +132,10 @@ def main():
                 check = r_client.rpop(REDIS_SEPARATOR.join([REDIS_PREFIX, "hash-check"]))
                 commands = check_hash(check, r_client)
                 send_commands(
-                    lookup_ui_key(json.loads(check)["id"]), commands, r_client, history=False
+                    lookup_ui_key(json.loads(check)["id"], r_client),
+                    commands,
+                    r_client,
+                    history=False,
                 )
 
 
