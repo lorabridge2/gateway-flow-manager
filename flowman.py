@@ -2,6 +2,7 @@
 # -*- coding=utf-8 -*-
 
 import base64
+import binascii
 import hashlib
 import json
 import logging
@@ -146,7 +147,7 @@ def check_hash(check: str, r_client: redis.Redis) -> list:
     commands = []
     hash = bytes(bytearray.fromhex(hashlib.sha1(repr(hash_commands).encode()).hexdigest()[-16:]))
     print(hash)
-    if check["hash"] == hash:
+    if binascii.unhexlify(check["hash"]) == hash:
         print("correct")
         if flow := get_flow(ui_key, r_client):
             commands.extend(upload_flow(flow, r_client))
