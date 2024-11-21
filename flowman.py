@@ -156,7 +156,7 @@ def check_hash(check: str, r_client: redis.Redis) -> list:
     else:
         print("incorrect")
         last_commands = json.loads(
-            r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, LAST_COMMANDS_PREFIX, flow["id"]]))
+            r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, LAST_COMMANDS_PREFIX, ui_key]))
         )
         return last_commands
 
