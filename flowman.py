@@ -147,7 +147,7 @@ def check_hash(check: str, r_client: redis.Redis) -> list:
     hash_commands = []
     if tmp := r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, COMMANDS_PREFIX, ui_key])):
         hash_commands = json.loads(tmp)
-
+    hash_commands = [bytearray(x) for x in hash_commands]
     print(hash_commands)
     commands = []
     hash = bytes(bytearray.fromhex(hashlib.sha1(repr(hash_commands).encode()).hexdigest()[-16:]))
