@@ -130,16 +130,16 @@ def main():
                 [REDIS_PREFIX, "hash-check"]
             ):
                 check = r_client.rpop(REDIS_SEPARATOR.join([REDIS_PREFIX, "hash-check"]))
-                commands = check_hash(check, r_client)
+                commands, correct = check_hash(check, r_client)
                 send_commands(
                     lookup_ui_key(json.loads(check)["id"], r_client),
                     commands,
                     r_client,
-                    history=False,
+                    history=correct,
                 )
 
 
-def check_hash(check: str, r_client: redis.Redis) -> list:
+def check_hash(check: str, r_client: redis.Redis) -> tuple[list, bool]:
     print(check)
     check = json.loads(check)
     print(check)
@@ -157,13 +157,13 @@ def check_hash(check: str, r_client: redis.Redis) -> list:
         if flow := get_flow(ui_key, r_client):
             commands.extend(upload_flow(flow, r_client))
             commands.extend(enable_flow(flow, r_client))
-        return commands
+        return (commands, True)
     else:
         print("incorrect")
         last_commands = json.loads(
             r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, LAST_COMMANDS_PREFIX, ui_key]))
         )
-        return last_commands
+        return (last_commands, False)
 
 
 def send_commands(id, commands, r_client, history=True):
