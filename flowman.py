@@ -695,7 +695,12 @@ def diff_flow(flow: any, r_client: redis.Redis):
 
     for edge in removed_edges:
         commands.append(
-            [action_bytes.DISCONNECT_NODE, get_node_key(flow["id"], edge["source"], r_client), 0]
+            [
+                action_bytes.DISCONNECT_NODE,
+                flow_id_lb,
+                get_node_key(flow["id"], edge["source"], r_client),
+                0,
+            ]
         )
 
     # save current flow for diff
