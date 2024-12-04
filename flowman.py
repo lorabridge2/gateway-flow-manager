@@ -61,7 +61,7 @@ LAST_COMMANDS_PREFIX = "last_commands"
 NODE_TYPES = {
     "binarydevice": 1,
     "binarysensor": 3,
-    "alert": 5,
+    "alert": 11,
     "logicand": 6,
     "logicor": 7,
     "timer": 8,
