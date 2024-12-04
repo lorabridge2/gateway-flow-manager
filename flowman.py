@@ -67,7 +67,7 @@ NODE_TYPES = {
     "timer": 8,
     "hysteresis": 9,
     "countdown": 10,
-    "valuefilter": 12
+    "valuefilter": 12,
 }
 
 
@@ -692,6 +692,25 @@ def diff_flow(flow: any, r_client: redis.Redis):
                         flow_id_lb, node_id_lb, node["data"]["counter"]
                     )
                 )
+            case "alert":
+                commands.append(
+                    type_parameter_commands["alert"]["message"](
+                        flow_id_lb, node_id_lb, node["data"]["message"]
+                    )
+                )
+            case "valuefilter":
+                if node["data"]["compareMethod"] != old_nodes[node["id"]]["data"]["compareMethod"]:
+                    commands.append(
+                        type_parameter_commands["valuefilter"]["compareMethod"](
+                            flow_id_lb, node_id_lb, node["data"]["compareMethod"]
+                        )
+                    )
+                if node["data"]["value"] != old_nodes[node["id"]]["data"]["value"]:
+                    commands.append(
+                        type_parameter_commands["valuefilter"]["value"](
+                            flow_id_lb, node_id_lb, node["data"]["value"]
+                        )
+                    )
             case "timer":
                 start = node["data"]["start"].split(":")
                 stop = node["data"]["stop"].split(":")
