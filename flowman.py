@@ -390,6 +390,37 @@ type_parameter_commands = {
             *list(struct.pack("!i", int(value))),
         ]
     },
+    "valuefilter": {
+        "compareMethod": lambda flow_id_lb, node_id_lb, value: [
+            action_bytes.PARAMETER_UPDATE,
+            flow_id_lb,
+            node_id_lb,
+            0,
+            len(value),
+            3,
+            *list(struct.pack(f"!{len(value)}s", value.encode())),
+        ],
+        "value": lambda flow_id_lb, node_id_lb, value: [
+            action_bytes.PARAMETER_UPDATE,
+            flow_id_lb,
+            node_id_lb,
+            1,
+            4,
+            1,
+            *list(struct.pack("!i", int(value))),
+        ],
+    },
+    "alert": {
+        "message": lambda flow_id_lb, node_id_lb, value: [
+            action_bytes.PARAMETER_UPDATE,
+            flow_id_lb,
+            node_id_lb,
+            0,
+            len(value),
+            3,
+            *list(struct.pack(f"!{len(value)}s", value.encode())),
+        ]
+    },
     "timer": {
         "start_hour": lambda flow_id_lb, node_id_lb, value: [
             action_bytes.PARAMETER_UPDATE,
@@ -483,6 +514,23 @@ def _add_node(flow_id_lb, flow_id_ui, node, r_client) -> list:
                 commands.append(
                     type_parameter_commands["countdown"]["counter"](
                         flow_id_lb, node_id_lb, node["data"]["counter"]
+                    )
+                )
+            case "alert":
+                commands.append(
+                    type_parameter_commands["alert"]["message"](
+                        flow_id_lb, node_id_lb, node["data"]["message"]
+                    )
+                )
+            case "valuefilter":
+                commands.append(
+                    type_parameter_commands["valuefilter"]["compareMethod"](
+                        flow_id_lb, node_id_lb, node["data"]["compareMethod"]
+                    )
+                )
+                commands.append(
+                    type_parameter_commands["valuefilter"]["value"](
+                        flow_id_lb, node_id_lb, node["data"]["value"]
                     )
                 )
             case "timer":
