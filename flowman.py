@@ -67,6 +67,7 @@ NODE_TYPES = {
     "timer": 8,
     "hysteresis": 9,
     "countdown": 10,
+    "valuefilter": 12
 }
 
 
