@@ -52,7 +52,7 @@ REDIS_PORT = int(os.environ.get("DEV_REDIS_PORT", 6379))
 REDIS_DB = int(os.environ.get("DEV_REDIS_DB", 0))
 DEV_EUI = os.environ.get("DEV_EUI").removeprefix(r"\x")
 APP_ID = None
-with open(f"device/{DEV_EUI}.json") as dfile:
+with open(f"/device/{DEV_EUI}.json") as dfile:
     APP_ID = json.loads(dfile.read())["application_id"]
 # DISCOVERY_TOPIC = os.environ.get("DEV_DISCOVERY_TOPIC", "lorabridge/discovery")
 # STATE_TOPIC = os.environ.get("DEV_STATE_TOPIC", "lorabridge/state")
