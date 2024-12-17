@@ -182,6 +182,7 @@ def send_commands(id, commands, r_client, history=True):
                     "fPort": 10,
                     "devEui": DEV_EUI,
                     "data": base64.b64encode(bytes(cmd)).decode(),
+                    "is_encrypted": False,
                 }
             ),
         }
