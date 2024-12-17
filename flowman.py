@@ -50,6 +50,12 @@ MQTT_PASSWORD = get_fileenv("DEV_MQTT_PASSWORD") or "lorabridge"
 REDIS_HOST = os.environ.get("DEV_REDIS_HOST", "localhost")
 REDIS_PORT = int(os.environ.get("DEV_REDIS_PORT", 6379))
 REDIS_DB = int(os.environ.get("DEV_REDIS_DB", 0))
+DEV_EUI = None
+APP_ID = None
+with open(f"device/{DEV_EUI}.json") as dfile:
+    content = json.loads(dfile.read())
+    APP_ID = content["application_id"]
+    DEV_EUI = content["dev_eui"]
 # DISCOVERY_TOPIC = os.environ.get("DEV_DISCOVERY_TOPIC", "lorabridge/discovery")
 # STATE_TOPIC = os.environ.get("DEV_STATE_TOPIC", "lorabridge/state")
 
@@ -170,13 +176,13 @@ def check_hash(check: str, r_client: redis.Redis) -> tuple[list, bool]:
 def send_commands(id, commands, r_client, history=True):
     msgs = [
         {
-            "topic": "application/c42cfa44-9586-4266-834b-bd412c33c488/device/2000000000000001/command/down",
+            "topic": f"application/{APP_ID}/device/{DEV_EUI}/command/down",
             # "topic": "eu868/gateway/aa555a0000000101/command/down",
             "payload": json.dumps(
                 {
                     "confirmed": True,
                     "fPort": 10,
-                    "devEui": "2000000000000001",
+                    "devEui": DEV_EUI,
                     "data": base64.b64encode(bytes(cmd)).decode(),
                 }
             ),
