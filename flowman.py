@@ -588,9 +588,9 @@ def parse_new_flow(flow: any, r_client: redis.Redis):
                 action_bytes.CONNECT_NODE,
                 flow_id_lb,
                 get_node_key(flow["id"], edge["source"], r_client),
-                0,
+                int(edge.get("sourceHandle", "").split("-")[-1] or 0),
                 get_node_key(flow["id"], edge["target"], r_client),
-                0,
+                int(edge.get("targetHandle", "").split("-")[-1] or 0),
             ]
         )
     # flow complete
@@ -759,9 +759,9 @@ def diff_flow(flow: any, r_client: redis.Redis):
                 action_bytes.CONNECT_NODE,
                 flow_id_lb,
                 get_node_key(flow["id"], edge["source"], r_client),
-                0,
+                int(edge.get("sourceHandle", "").split("-")[-1] or 0),
                 get_node_key(flow["id"], edge["target"], r_client),
-                0,
+                int(edge.get("targetHandle", "").split("-")[-1] or 0),
             ]
         )
 
@@ -771,7 +771,7 @@ def diff_flow(flow: any, r_client: redis.Redis):
                 action_bytes.DISCONNECT_NODE,
                 flow_id_lb,
                 get_node_key(flow["id"], edge["source"], r_client),
-                0,
+                int(edge.get("sourceHandle", "").split("-")[-1] or 0),
             ]
         )
 
