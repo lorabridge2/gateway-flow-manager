@@ -187,7 +187,7 @@ def check_hash(check: str, r_client: redis.Redis) -> tuple[list, bool]:
             )
             > 4
         ):
-            print(f"Hash checking of flow {check["id"]} exceeded max retries")
+            print(f"Hash checking of flow {check['id']} exceeded max retries")
             flow = get_flow(ui_key, r_client)
             send_event(
                 f"Retransmissions of flow {flow['name']} (id: {flow['id']}) exceeded max retries",
