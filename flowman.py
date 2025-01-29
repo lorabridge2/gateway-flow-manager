@@ -9,6 +9,9 @@ import logging
 import os
 import struct
 import sys
+from typing import Literal
+import uuid
+import time
 from enum import IntEnum
 from pprint import pprint
 
@@ -61,6 +64,8 @@ REDIS_SEPARATOR = ":"
 REDIS_PREFIX = "lorabridge:flowman"
 COMMANDS_PREFIX = "commands"
 LAST_COMMANDS_PREFIX = "last_commands"
+COUNTER_PREFIX = "counter"
+REDIS_MSG_PREFIX = "lorabridge:events"
 
 NODE_TYPES = {
     "binarydevice": 1,
@@ -162,13 +167,53 @@ def check_hash(check: str, r_client: redis.Redis) -> tuple[list, bool]:
         if flow := get_flow(ui_key, r_client):
             commands.extend(upload_flow(flow, r_client))
             commands.extend(enable_flow(flow, r_client))
+        r_client.delete(
+            REDIS_SEPARATOR.join([REDIS_PREFIX, LAST_COMMANDS_PREFIX, COUNTER_PREFIX, ui_key])
+        )
         return (commands, True)
     else:
         print("incorrect")
         last_commands = json.loads(
             r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, LAST_COMMANDS_PREFIX, ui_key]))
         )
-        return (last_commands, False)
+        if (
+            int(
+                r_client.get(
+                    REDIS_SEPARATOR.join(
+                        [REDIS_PREFIX, LAST_COMMANDS_PREFIX, COUNTER_PREFIX, ui_key]
+                    )
+                )
+                or 0
+            )
+            > 4
+        ):
+            print(f"Hash checking of flow {check["id"]} exceeded max retries")
+            flow = get_flow(ui_key, r_client)
+            send_event(
+                f"Retransmissions of flow {flow['name']} (id: {flow['id']}) exceeded max retries",
+                r_client,
+            )
+            # delete flow, so that it can be transmitted and checked without history?
+        else:
+            r_client.incr(
+                REDIS_SEPARATOR.join([REDIS_PREFIX, LAST_COMMANDS_PREFIX, COUNTER_PREFIX, ui_key])
+            )
+            return (last_commands, False)
+
+
+def send_event(msg: str, r_client: redis.Redis, queue: Literal["system", "user"] = "system"):
+    id = str(uuid.uuid4())
+    timestamp = time.time()
+    r_client.hset(
+        REDIS_SEPARATOR.join([REDIS_MSG_PREFIX, queue, id]),
+        mapping={
+            "msg": msg,
+            "timestamp": timestamp,
+            "seen": 0,  # False,
+            "id": id,
+        },
+    )
+    r_client.zadd(REDIS_SEPARATOR.join([REDIS_MSG_PREFIX, queue, "msgs"]), mapping={id: timestamp})
 
 
 def send_commands(id, commands, r_client, history=True):
