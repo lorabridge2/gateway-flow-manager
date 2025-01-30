@@ -359,8 +359,9 @@ def send_commands(id, commands, r_client: redis.Redis, history=True):
 def set_flow_status(ui_key: str, msg: deploy_messages, r_client: redis.Redis):
     r_client.zadd(
         REDIS_SEPARATOR.join([REDIS_PREFIX, REDIS_TASK_PREFIX, ui_key, REDIS_TASK_STATUS_MSG]),
-        mapping={time.time(): msg},
+        mapping={msg:time.time()},
     )
+    
 
 
 def process_flow(task, r_client):
