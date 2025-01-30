@@ -321,10 +321,10 @@ def send_commands(id, commands, r_client: redis.Redis, history=True):
 
     clear_tasks(r_client, id)
 
-    r_client.hmset(task_ui_key, mapping={json.loads(msg["payload"])["id"]: id for msg in msgs})
+    r_client.hset(task_ui_key, mapping={json.loads(msg["payload"])["id"]: id for msg in msgs})
 
     # r_client.delete(REDIS_SEPARATOR.join([REDIS_PREFIX, REDIS_TASK_PREFIX, id]))
-    r_client.hmset(
+    r_client.hset(
         REDIS_SEPARATOR.join([REDIS_PREFIX, REDIS_TASK_PREFIX, id]),
         mapping={json.loads(msg["payload"])["id"]: "issued" for msg in msgs},
     )
@@ -359,9 +359,8 @@ def send_commands(id, commands, r_client: redis.Redis, history=True):
 def set_flow_status(ui_key: str, msg: deploy_messages, r_client: redis.Redis):
     r_client.zadd(
         REDIS_SEPARATOR.join([REDIS_PREFIX, REDIS_TASK_PREFIX, ui_key, REDIS_TASK_STATUS_MSG]),
-        mapping={msg:time.time()},
+        mapping={msg: time.time()},
     )
-    
 
 
 def process_flow(task, r_client):
