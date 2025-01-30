@@ -182,7 +182,8 @@ def process_hash(check, r_client):
 
 
 def process_status(status, r_client):
-    ui_key = lookup_ui_key(json.loads(status)["id"], r_client)
+    status = json.loads(status)
+    ui_key = lookup_ui_key(status["id"], r_client)
     msg = None
     match status["type"]:
         case status_types.TRANSMISSION_COMPLETE:
