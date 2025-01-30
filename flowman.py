@@ -14,6 +14,7 @@ import uuid
 from enum import IntEnum, StrEnum
 from pprint import pprint
 from typing import Literal
+from threading import Thread
 
 import device_classes
 import paho.mqtt.publish as publish
@@ -132,12 +133,20 @@ class UnknownDeviceError(ValueError):
     pass
 
 
-def mqtt_txack(client, userdata, message):
-    _update_task_status(json.loads(message.payload), userdata["r_client"], "txack")
+# def mqtt_txack(client, userdata, message):
+#     _update_task_status(json.loads(message.payload), userdata["r_client"], "txack")
 
 
-def mqtt_ack(client, userdata, message):
-    _update_task_status(json.loads(message.payload), userdata["r_client"], "ack")
+# def mqtt_ack(client, userdata, message):
+#     _update_task_status(json.loads(message.payload), userdata["r_client"], "ack")
+
+
+def _mqtt_listen(client, userdata, message):
+    match message.topic.split("/")[-1]:
+        case "txack":
+            _update_task_status(json.loads(message.payload), userdata["r_client"], "txack")
+        case "ack":
+            _update_task_status(json.loads(message.payload), userdata["r_client"], "ack")
 
 
 def _update_task_status(payload, r_client: redis.Redis, status: Literal["issued", "txack", "ack"]):
@@ -146,6 +155,17 @@ def _update_task_status(payload, r_client: redis.Redis, status: Literal["issued"
 
     r_client.hset(
         REDIS_SEPARATOR.join([REDIS_PREFIX, REDIS_TASK_PREFIX, ui_key]), task_uuid, status
+    )
+
+
+def mqtt_listen(userdata):
+    subscribe.callback(
+        _mqtt_listen,
+        f"application/{APP_ID}/device/{DEV_EUI}/event/+",
+        hostname=MQTT_HOST,
+        port=MQTT_PORT,
+        auth={"username": MQTT_USERNAME, "password": MQTT_PASSWORD},
+        userdata=userdata,
     )
 
 
@@ -158,23 +178,7 @@ def main():
         process_flow(item, r_client)
 
     userdata = {"r_client": r_client}
-    subscribe.callback(
-        mqtt_txack,
-        f"application/{APP_ID}/device/{DEV_EUI}/event/txack",
-        hostname=MQTT_HOST,
-        port=MQTT_PORT,
-        auth={"username": MQTT_USERNAME, "password": MQTT_PASSWORD},
-        userdata=userdata,
-    )
-
-    subscribe.callback(
-        mqtt_ack,
-        f"application/{APP_ID}/device/{DEV_EUI}/event/ack",
-        hostname=MQTT_HOST,
-        port=MQTT_PORT,
-        auth={"username": MQTT_USERNAME, "password": MQTT_PASSWORD},
-        userdata=userdata,
-    )
+    Thread(target=mqtt_listen, args=(userdata,), daemon=True).start()
 
     pubsub = r_client.pubsub(ignore_subscribe_messages=True)
     pubsub.subscribe(
