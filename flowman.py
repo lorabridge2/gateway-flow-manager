@@ -169,6 +169,29 @@ def mqtt_listen(userdata):
     )
 
 
+def process_hash(check, r_client):
+    # check = r_client.rpop(REDIS_SEPARATOR.join([REDIS_PREFIX, "hash-check"]))
+    ui_key = lookup_ui_key(json.loads(check)["id"], r_client)
+    commands, correct = check_hash(check, r_client)
+    send_commands(
+        ui_key,
+        commands,
+        r_client,
+        history=correct,
+    )
+
+
+def process_status(status, r_client):
+    ui_key = lookup_ui_key(json.loads(status)["id"], r_client)
+    msg = None
+    match status["type"]:
+        case status_types.TRANSMISSION_COMPLETE:
+            msg = deploy_messages.COMPLETED
+        case status_types.TRANSMISSION_FAILED:
+            msg = deploy_messages.FAILED
+    set_flow_status(ui_key, msg, r_client)
+
+
 def main():
     logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 
@@ -176,6 +199,12 @@ def main():
 
     while item := r_client.rpop(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-queue"])):
         process_flow(item, r_client)
+
+    while check := r_client.rpop(REDIS_SEPARATOR.join([REDIS_PREFIX, "hash-check"])):
+        process_hash(check, r_client)
+
+    while status := r_client.rpop(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-status"])):
+        process_status(status, r_client)
 
     userdata = {"r_client": r_client}
     Thread(target=mqtt_listen, args=(userdata,), daemon=True).start()
@@ -201,26 +230,29 @@ def main():
                 [REDIS_PREFIX, "hash-check"]
             ):
                 check = r_client.rpop(REDIS_SEPARATOR.join([REDIS_PREFIX, "hash-check"]))
-                ui_key = lookup_ui_key(json.loads(check)["id"], r_client)
-                commands, correct = check_hash(check, r_client)
-                send_commands(
-                    ui_key,
-                    commands,
-                    r_client,
-                    history=correct,
-                )
+                if check:
+                    process_hash(check, r_client)
+                # ui_key = lookup_ui_key(json.loads(check)["id"], r_client)
+                # commands, correct = check_hash(check, r_client)
+                # send_commands(
+                #     ui_key,
+                #     commands,
+                #     r_client,
+                #     history=correct,
+                # )
             elif msg["channel"] == "__keyspace@0__:" + REDIS_SEPARATOR.join(
-                [REDIS_PREFIX, "hash-status"]
+                [REDIS_PREFIX, "flow-status"]
             ):
-                status = r_client.rpop(REDIS_SEPARATOR.join([REDIS_PREFIX, "hash-status"]))
-                ui_key = lookup_ui_key(json.loads(status)["id"], r_client)
-                msg = None
-                match status["type"]:
-                    case status_types.TRANSMISSION_COMPLETE:
-                        msg = deploy_messages.COMPLETED
-                    case status_types.TRANSMISSION_FAILED:
-                        msg = deploy_messages.FAILED
-                set_flow_status(ui_key, msg, r_client)
+                status = r_client.rpop(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow-status"]))
+                process_status(status, r_client)
+                # ui_key = lookup_ui_key(json.loads(status)["id"], r_client)
+                # msg = None
+                # match status["type"]:
+                #     case status_types.TRANSMISSION_COMPLETE:
+                #         msg = deploy_messages.COMPLETED
+                #     case status_types.TRANSMISSION_FAILED:
+                #         msg = deploy_messages.FAILED
+                # set_flow_status(ui_key, msg, r_client)
 
 
 def check_hash(check: str, r_client: redis.Redis) -> tuple[list, bool]:
