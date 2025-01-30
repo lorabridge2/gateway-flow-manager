@@ -321,12 +321,12 @@ def send_commands(id, commands, r_client: redis.Redis, history=True):
 
     clear_tasks(r_client, id)
 
-    r_client.hmset(task_ui_key, mapping={msg["payload"]["id"]: id for msg in msgs})
+    r_client.hmset(task_ui_key, mapping={json.loads(msg["payload"])["id"]: id for msg in msgs})
 
     # r_client.delete(REDIS_SEPARATOR.join([REDIS_PREFIX, REDIS_TASK_PREFIX, id]))
     r_client.hmset(
         REDIS_SEPARATOR.join([REDIS_PREFIX, REDIS_TASK_PREFIX, id]),
-        mapping={msg["payload"]["id"]: "issued" for msg in msgs},
+        mapping={json.loads(msg["payload"])["id"]: "issued" for msg in msgs},
     )
 
     # save last commands for hash retry
