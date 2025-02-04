@@ -152,10 +152,12 @@ def _mqtt_listen(client, userdata, message):
 def _update_task_status(payload, r_client: redis.Redis, status: Literal["issued", "txack", "ack"]):
     task_uuid = payload["queueItemId"]
     ui_key = lookup_ui_key_from_task(task_uuid, r_client)
-
-    r_client.hset(
-        REDIS_SEPARATOR.join([REDIS_PREFIX, REDIS_TASK_PREFIX, ui_key]), task_uuid, status
-    )
+    if ui_key:
+        r_client.hset(
+            REDIS_SEPARATOR.join([REDIS_PREFIX, REDIS_TASK_PREFIX, ui_key]), task_uuid, status
+        )
+    else:
+        print("ui_key not found [_update_task_status]")
 
 
 def mqtt_listen(userdata):
@@ -942,9 +944,9 @@ def del_flow(flow: any, r_client: redis.Redis) -> list:
         commands.append([action_bytes.REMOVE_FLOW, flow_id_lb])
         del_flow_id(flow_id_lb, r_client)
         r_client.delete(REDIS_SEPARATOR.join([REDIS_PREFIX, "flow", flow["id"]]))
-        r_client.delete(REDIS_SEPARATOR.join([REDIS_PREFIX, COMMANDS_PREFIX, id]))
+        r_client.delete(REDIS_SEPARATOR.join([REDIS_PREFIX, COMMANDS_PREFIX, flow["id"]]))
         r_client.delete(
-            REDIS_SEPARATOR.join([REDIS_PREFIX, LAST_COMMANDS_PREFIX, COUNTER_PREFIX, ui_key])
+            REDIS_SEPARATOR.join([REDIS_PREFIX, LAST_COMMANDS_PREFIX, COUNTER_PREFIX, flow["id"]])
         )
     return commands
 
