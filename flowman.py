@@ -917,6 +917,8 @@ def diff_flow(flow: any, r_client: redis.Redis):
                 flow_id_lb,
                 get_node_key(flow["id"], edge["source"], r_client),
                 int(edge.get("sourceHandle", "").split("-")[-1] or 0),
+                get_node_key(flow["id"], edge["target"], r_client),
+                int(edge.get("targetHandle", "").split("-")[-1] or 0),
             ]
         )
 
