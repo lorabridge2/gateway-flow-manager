@@ -41,7 +41,7 @@ jobs:
         with:
           context: .
           push: true
-          platforms: linux/arm/v7
+          platforms: linux/arm64,linux/arm/v7
           tags: |
             ${{ env.REGISTRY }}/lorabridge2/gateway-flow-manager:latest
           cache-from: type=registry,ref=${{ env.REGISTRY }}/lorabridge2/gateway-flow-manager:latest
