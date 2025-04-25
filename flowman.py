@@ -432,8 +432,8 @@ def process_flow(task, r_client):
 
     if commands:
         send_commands(flow["id"], commands, r_client)
-        if task["task"] == "delete":
-            r_client.delete([REDIS_PREFIX, COMMANDS_PREFIX, flow["id"]])
+        # if task["task"] == "delete":
+        #     r_client.delete([REDIS_PREFIX, COMMANDS_PREFIX, flow["id"]])
 
 
 def get_node_key(flow_id: str, node_id: str, r_client: redis.Redis) -> int:
