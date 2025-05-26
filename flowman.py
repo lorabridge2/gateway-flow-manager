@@ -221,7 +221,6 @@ def main():
 
     for msg in pubsub.listen():
         if msg["type"] == "message" and msg["data"] == "lpush":
-            print(msg)
             if msg["channel"] == "__keyspace@0__:" + REDIS_SEPARATOR.join(
                 [REDIS_PREFIX, "flow-queue"]
             ):
@@ -259,21 +258,16 @@ def main():
 
 
 def check_hash(check: str, r_client: redis.Redis) -> tuple[list, bool]:
-    print(check)
     check = json.loads(check)
-    print(check)
     ui_key = lookup_ui_key(check["id"], r_client)
     set_flow_status(ui_key, deploy_messages.HASH_CHECKING, r_client)
     hash_commands = []
     if tmp := r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, COMMANDS_PREFIX, ui_key])):
         hash_commands = json.loads(tmp)
     hash_commands = [bytearray(x) for x in hash_commands]
-    print(hash_commands)
     commands = []
     hash = bytes(bytearray.fromhex(hashlib.sha1(repr(hash_commands).encode()).hexdigest()[-16:]))
-    print(hash)
     if binascii.unhexlify(check["hash"]) == hash:
-        print("correct")
         set_flow_status(ui_key, deploy_messages.HASH_CORRECT, r_client)
         if flow := get_flow(ui_key, r_client):
             commands.extend(upload_flow(flow, r_client))
@@ -283,7 +277,6 @@ def check_hash(check: str, r_client: redis.Redis) -> tuple[list, bool]:
         )
         return (commands, True)
     else:
-        print("incorrect")
         set_flow_status(ui_key, deploy_messages.HASH_INCORRECT, r_client)
         last_commands = json.loads(
             r_client.get(REDIS_SEPARATOR.join([REDIS_PREFIX, LAST_COMMANDS_PREFIX, ui_key]))
@@ -354,6 +347,8 @@ def send_commands(id, commands, r_client: redis.Redis, history=True):
         for cmd in commands
     ]
 
+    print(f"Len of commands: {sum(len(bytes(x)) for x in commands)} bytes")
+
     clear_tasks(r_client, id)
 
     r_client.hset(task_ui_key, mapping={json.loads(msg["payload"])["id"]: id for msg in msgs})
@@ -406,7 +401,6 @@ def process_flow(task, r_client):
     set_flow_status(flow["id"], deploy_messages.PENDING_TASKS, r_client)
     flow["nodes"] = json.loads(flow["nodes"])
     flow["edges"] = json.loads(flow["edges"])
-    print("b")
     commands = []
     match task["task"]:
         case "deploy":
@@ -456,8 +450,6 @@ def lookup_ui_key_from_task(id: str, r_client: redis.Redis) -> str:
 
 def _get_key(id: str, r_client: redis.Redis, lb_dict: str, ui_dict: str):
     lb_id = r_client.hget(ui_dict, id)
-    print(lb_id)
-    print("aas")
     while lb_id is None:
         keys = r_client.hkeys(lb_dict)
         if not keys:
@@ -718,9 +710,7 @@ def parse_new_flow(flow: any, r_client: redis.Redis):
     # TODO autoremove flow ONLY for now
     # if flow_exists(flow["id"], r_client):
     #     commands.append([action_bytes.REMOVE_FLOW, get_flow_key(flow["id"], r_client)])
-    print("hy")
     flow_id_lb = get_flow_key(flow["id"], r_client)
-    print(flow)
     # add flow
     commands.append([action_bytes.ADD_FLOW, flow_id_lb])
     for node in flow["nodes"]:
@@ -814,8 +804,6 @@ def diff_flow(flow: any, r_client: redis.Redis):
         commands.extend(_add_node(flow_id_lb, flow["id"], node, r_client))
 
     for node in changed_nodes:
-        print("changed")
-        print(changed_nodes)
         node_id_lb = get_node_key(flow["id"], node["id"], r_client)
         match node["type"]:
             case "binarysensor" | "binarydevice":
